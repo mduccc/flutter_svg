@@ -20,6 +20,7 @@
 
 analyzer:
   strong-mode:
+    implicit-casts: false
     implicit-dynamic: false
   errors:
     # treat missing required parameters as a warning (not a hint)
@@ -43,12 +44,13 @@ linter:
     - always_specify_types
     - annotate_overrides
     # - avoid_annotating_with_dynamic # conflicts with always_specify_types
-    - avoid_as
+    # - avoid_as # conflicts with implicit-casts: false
     # - avoid_bool_literals_in_conditional_expressions # not yet tested
     # - avoid_catches_without_on_clauses # we do this commonly
     # - avoid_catching_errors # we do this commonly
     - avoid_classes_with_only_static_members
     # - avoid_double_and_int_checks # only useful when targeting JS runtime
+    - avoid_equals_and_hash_code_on_mutable_classes
     - avoid_empty_else
     - avoid_field_initializers_in_const_classes
     - avoid_function_literals_in_foreach_calls
@@ -135,7 +137,6 @@ linter:
     - prefer_single_quotes
     - prefer_typing_uninitialized_variables
     - prefer_void_to_null
-    # - public_member_api_docs # enabled on a case-by-case basis; see e.g. packages/analysis_options.yaml
     - recursive_getters
     - slash_for_doc_comments
     - sort_constructors_first

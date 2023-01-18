@@ -5,35 +5,47 @@
 // The golden files should then be visually compared against Chrome's rendering output for correctness.
 // The comparison may have to be made more tolerant if we want to use other sources of rendering for comparison...
 
-import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui';
 
+import 'package:custom_flutter_svg/src/vector_drawable.dart';
+import 'package:custom_flutter_svg/svg.dart';
 import 'package:path/path.dart' as path;
 
-import 'package:flutter_svg/svg.dart';
-import 'package:flutter_svg/src/vector_drawable.dart';
-
-Future<Uint8List> getSvgPngBytes(String svgData) async {
+Future<Image> getSvgImage(String svgData) async {
   final PictureRecorder rec = PictureRecorder();
   final Canvas canvas = Canvas(rec);
 
   const Size size = Size(200.0, 200.0);
 
-  final DrawableRoot svgRoot =
-      await svg.fromSvgString(svgData, 'GenGoldenTest');
+  final DrawableRoot svgRoot = await svg.fromSvgString(
+    svgData,
+    'GenGoldenTest',
+  );
+
   svgRoot.scaleCanvasToViewBox(canvas, size);
   svgRoot.clipCanvasToViewBox(canvas);
 
   canvas.drawPaint(Paint()..color = const Color(0xFFFFFFFF));
-  svgRoot.draw(canvas, null, svgRoot.viewport.viewBoxRect);
+  svgRoot.draw(canvas, svgRoot.viewport.viewBoxRect);
 
   final Picture pict = rec.endRecording();
 
-  final Image image =
-      await pict.toImage(size.width.toInt(), size.height.toInt());
-  final ByteData bytes = await image.toByteData(format: ImageByteFormat.png);
+  return await pict.toImage(size.width.toInt(), size.height.toInt());
+}
+
+Future<Uint8List> getSvgPngBytes(String svgData) async {
+  final Image image = await getSvgImage(svgData);
+  final ByteData bytes = (await image.toByteData(format: ImageByteFormat.png))!;
+
+  return bytes.buffer.asUint8List();
+}
+
+Future<Uint8List> getSvgRgbaBytes(String svgData) async {
+  final Image image = await getSvgImage(svgData);
+  final ByteData bytes =
+      (await image.toByteData(format: ImageByteFormat.rawRgba))!;
 
   return bytes.buffer.asUint8List();
 }

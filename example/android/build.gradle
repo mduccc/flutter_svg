@@ -1,11 +1,15 @@
 buildscript {
+    // Do not copy this. It's strictly because this application does not care
+    // about Kotlin version and wants to always do its best to work.
+    ext.kotlin_version = '+'
     repositories {
         google()
         jcenter()
     }
 
     dependencies {
-        classpath 'com.android.tools.build:gradle:3.1.2'
+        classpath 'com.android.tools.build:gradle:4.1.0'
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
     }
 }
 

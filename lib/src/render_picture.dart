@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 
+import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
-import 'package:meta/meta.dart';
 
 import 'picture_stream.dart';
 
@@ -11,13 +11,13 @@ class RawPicture extends LeafRenderObjectWidget {
   /// Creates a new [RawPicture] object.
   const RawPicture(
     this.picture, {
-    Key key,
+    Key? key,
     this.matchTextDirection = false,
     this.allowDrawingOutsideViewBox = false,
   }) : super(key: key);
 
   /// The picture to paint.
-  final PictureInfo picture;
+  final PictureInfo? picture;
 
   /// Whether this picture should match the ambient [TextDirection] or not.
   final bool matchTextDirection;
@@ -60,19 +60,20 @@ class RawPicture extends LeafRenderObjectWidget {
 class RenderPicture extends RenderBox {
   /// Creates a new [RenderPicture].
   RenderPicture({
-    PictureInfo picture,
+    PictureInfo? picture,
     bool matchTextDirection = false,
-    TextDirection textDirection,
-    bool allowDrawingOutsideViewBox,
-  })  : _picture = picture,
-        _matchTextDirection = matchTextDirection,
+    TextDirection? textDirection,
+    bool? allowDrawingOutsideViewBox,
+  })  : _matchTextDirection = matchTextDirection,
         _textDirection = textDirection,
-        _allowDrawingOutsideViewBox = allowDrawingOutsideViewBox;
+        _allowDrawingOutsideViewBox = allowDrawingOutsideViewBox {
+    this.picture = picture;
+  }
 
   /// Optional color to use to draw a thin rectangle around the canvas.
   ///
   /// Only applied if asserts are enabled (e.g. debug mode).
-  static Color debugRectColor;
+  static Color? debugRectColor;
 
   /// Whether to paint the picture in the direction of the [TextDirection].
   ///
@@ -91,7 +92,7 @@ class RenderPicture extends RenderBox {
   bool get matchTextDirection => _matchTextDirection;
   bool _matchTextDirection;
   set matchTextDirection(bool value) {
-    assert(value != null);
+    assert(value != null); // ignore: unnecessary_null_comparison
     if (value == _matchTextDirection) {
       return;
     }
@@ -107,9 +108,9 @@ class RenderPicture extends RenderBox {
   /// This may be changed to null, but only after the [alignment] and
   /// [matchTextDirection] properties have been changed to values that do not
   /// depend on the direction.
-  TextDirection get textDirection => _textDirection;
-  TextDirection _textDirection;
-  set textDirection(TextDirection value) {
+  TextDirection? get textDirection => _textDirection;
+  TextDirection? _textDirection;
+  set textDirection(TextDirection? value) {
     if (_textDirection == value) {
       return;
     }
@@ -118,13 +119,26 @@ class RenderPicture extends RenderBox {
   }
 
   /// The information about the picture to draw.
-  PictureInfo get picture => _picture;
-  PictureInfo _picture;
-  set picture(PictureInfo val) {
-    if (val == picture) {
+  PictureInfo? get picture => _picture;
+  PictureInfo? _picture;
+  set picture(PictureInfo? value) {
+    // Don't use `==` because PictureInfo is mutable and it has values that are
+    // not relevant to rendering.
+    if (value != null &&
+        value.picture == picture?.picture &&
+        value.size == picture?.size &&
+        value.viewport == picture?.viewport) {
       return;
     }
-    _picture = val;
+    _picture = value;
+    _pictureHandle.layer = _picture?.createLayer();
+    assert(() {
+      if (_pictureHandle.layer != null) {
+        assert(_pictureHandle.layer!.isComplexHint);
+        assert(!_pictureHandle.layer!.willChangeHint);
+      }
+      return true;
+    }());
     markNeedsPaint();
   }
 
@@ -133,9 +147,9 @@ class RenderPicture extends RenderBox {
   ///
   /// Caution should be used around setting this parameter to true, as it
   /// may result in greater memory usage during rasterization.
-  bool get allowDrawingOutsideViewBox => _allowDrawingOutsideViewBox;
-  bool _allowDrawingOutsideViewBox;
-  set allowDrawingOutsideViewBox(bool val) {
+  bool? get allowDrawingOutsideViewBox => _allowDrawingOutsideViewBox;
+  bool? _allowDrawingOutsideViewBox;
+  set allowDrawingOutsideViewBox(bool? val) {
     if (val == _allowDrawingOutsideViewBox) {
       return;
     }
@@ -151,65 +165,127 @@ class RenderPicture extends RenderBox {
   bool get sizedByParent => true;
 
   @override
-  void performResize() {
-    size = constraints.smallest;
+  Size computeDryLayout(BoxConstraints constraints) {
+    return constraints.smallest;
+  }
+
+  @override
+  bool get isRepaintBoundary => true;
+
+  final LayerHandle<TransformLayer> _transformHandle =
+      LayerHandle<TransformLayer>();
+
+  final LayerHandle<ClipRectLayer> _clipHandle = LayerHandle<ClipRectLayer>();
+
+  final LayerHandle<PictureLayer> _pictureHandle = LayerHandle<PictureLayer>();
+
+  void _addPicture(PaintingContext context, Offset offset) {
+    assert(picture != null);
+    assert(_pictureHandle.layer != null);
+    if (allowDrawingOutsideViewBox != true) {
+      final Rect viewportRect = Offset.zero & _picture!.viewport.size;
+      _clipHandle.layer = context.pushClipRect(
+        needsCompositing,
+        offset,
+        viewportRect,
+        (PaintingContext context, Offset offset) {
+          context.addLayer(_pictureHandle.layer!);
+        },
+        oldLayer: _clipHandle.layer,
+      );
+    } else {
+      _clipHandle.layer = null;
+      context.addLayer(_pictureHandle.layer!);
+    }
+  }
+
+  @override
+  void dispose() {
+    _transformHandle.layer = null;
+    _clipHandle.layer = null;
+    _pictureHandle.layer = null;
+    super.dispose();
   }
 
   @override
   void paint(PaintingContext context, Offset offset) {
-    if (picture == null || size == null || size == Size.zero) {
+    if (picture == null || size == Size.zero) {
       return;
     }
-    context.canvas.save();
-    context.canvas.translate(offset.dx, offset.dy);
+
+    bool needsTransform = false;
+    final Matrix4 transform = Matrix4.identity();
+
     if (_flipHorizontally) {
-      context.canvas.translate(offset.dx + size.width, 0.0);
-      context.canvas.scale(-1.0, 1.0);
+      needsTransform = true;
+      transform
+        ..translate(size.width, 0.0)
+        ..scale(-1.0, 1.0);
+    }
+
+    if (scaleCanvasToViewBox(
+      transform,
+      size,
+      _picture!.viewport,
+      _picture!.size,
+    )) {
+      needsTransform = true;
+    }
+
+    if (needsTransform) {
+      _transformHandle.layer = context.pushTransform(
+        needsCompositing,
+        offset,
+        transform,
+        _addPicture,
+        oldLayer: _transformHandle.layer,
+      );
+    } else {
+      _transformHandle.layer = null;
+      _addPicture(context, offset);
     }
 
     // this is sometimes useful for debugging, e.g. to draw
     // a thin red border around the drawing.
     assert(() {
       if (RenderPicture.debugRectColor != null &&
-          RenderPicture.debugRectColor.alpha > 0) {
+          RenderPicture.debugRectColor!.alpha > 0) {
         context.canvas.drawRect(
             Offset.zero & size,
             Paint()
-              ..color = debugRectColor
+              ..color = debugRectColor!
               ..style = PaintingStyle.stroke);
       }
       return true;
     }());
-    scaleCanvasToViewBox(
-      context.canvas,
-      size,
-      _picture.viewport,
-      _picture.size,
-    );
-    final Rect viewportRect = Offset.zero & _picture.viewport.size;
-    if (allowDrawingOutsideViewBox != true) {
-      context.canvas.clipRect(viewportRect);
-    }
-    context.canvas.drawPicture(picture.picture);
-    context.canvas.restore();
   }
 }
 
-/// Scales a [Canvas] to a given [viewBox] based on the [desiredSize]
+/// Scales a matrix to the given [viewBox] based on the [desiredSize]
 /// of the widget.
-void scaleCanvasToViewBox(
-  Canvas canvas,
+///
+/// Returns true if the supplied matrix was modified.
+bool scaleCanvasToViewBox(
+  Matrix4 matrix,
   Size desiredSize,
   Rect viewBox,
   Size pictureSize,
 ) {
-  if (desiredSize != viewBox.size) {
-    final double scale = math.min(
-      desiredSize.width / viewBox.width,
-      desiredSize.height / viewBox.height,
-    );
-    final Offset shift = desiredSize / 2.0 - viewBox.size * scale / 2.0;
-    canvas.translate(shift.dx, shift.dy);
-    canvas.scale(scale, scale);
+  if (desiredSize == viewBox.size) {
+    return false;
   }
+  final double scale = math.min(
+    desiredSize.width / viewBox.width,
+    desiredSize.height / viewBox.height,
+  );
+  final Size scaledHalfViewBoxSize = viewBox.size * scale / 2.0;
+  final Size halfDesiredSize = desiredSize / 2.0;
+  final Offset shift = Offset(
+    halfDesiredSize.width - scaledHalfViewBoxSize.width,
+    halfDesiredSize.height - scaledHalfViewBoxSize.height,
+  );
+  matrix
+    ..translate(shift.dx, shift.dy)
+    ..scale(scale, scale);
+  return true;
 }

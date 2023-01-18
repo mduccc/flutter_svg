@@ -1,13 +1,8 @@
-/// ignore_for_file: public_member_api_docs
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
-import 'package:flutter_svg/avd.dart';
-import 'package:flutter_svg/flutter_svg.dart';
+import 'package:custom_flutter_svg/avd.dart';
+import 'package:custom_flutter_svg/flutter_svg.dart';
 
-/// Assets that will be rendered.
-const List<String> assetNames = <String>[
+const List<String> _assetNames = <String>[
   // 'assets/notfound.svg', // uncomment to test an asset that doesn't exist.
   'assets/flutter_logo.svg',
   'assets/dart.svg',
@@ -19,6 +14,7 @@ const List<String> assetNames = <String>[
   'assets/simple/group_opacity.svg',
   'assets/simple/text.svg',
   'assets/simple/text_2.svg',
+  'assets/simple/text_5.svg',
   'assets/simple/linear_gradient.svg',
   'assets/simple/linear_gradient_2.svg',
   'assets/simple/male.svg',
@@ -61,10 +57,10 @@ const List<String> uriNames = <String>[
 ];
 
 void main() {
-  runApp(MyApp());
+  runApp(_MyApp());
 }
 
-class MyApp extends StatelessWidget {
+class _MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -72,28 +68,28 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         primarySwatch: Colors.blue,
       ),
-      home: const MyHomePage(title: 'Flutter SVG Demo'),
+      home: const _MyHomePage(title: 'Flutter SVG Demo'),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({Key key, this.title}) : super(key: key);
+class _MyHomePage extends StatefulWidget {
+  const _MyHomePage({Key? key, required this.title}) : super(key: key);
   final String title;
 
   @override
   _MyHomePageState createState() => _MyHomePageState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
+class _MyHomePageState extends State<_MyHomePage> {
   final List<Widget> _painters = <Widget>[];
-  double _dimension;
+  late double _dimension;
 
   @override
   void initState() {
     super.initState();
     _dimension = 203.0;
-    for (String assetName in assetNames) {
+    for (String assetName in _assetNames) {
       _painters.add(
         SvgPicture.asset(assetName),
       );
@@ -117,8 +113,9 @@ class _MyHomePageState extends State<MyHomePage> {
         SvgPicture.network(
           uriName,
           placeholderBuilder: (BuildContext context) => Container(
-              padding: const EdgeInsets.all(30.0),
-              child: const CircularProgressIndicator()),
+            padding: const EdgeInsets.all(30.0),
+            child: const CircularProgressIndicator(),
+          ),
         ),
       );
     }
@@ -141,12 +138,13 @@ class _MyHomePageState extends State<MyHomePage> {
       ),
       body: Column(children: <Widget>[
         Slider(
-            min: 5.0,
-            max: MediaQuery.of(context).size.width - 10.0,
-            value: _dimension,
-            onChanged: (double val) {
-              setState(() => _dimension = val);
-            }),
+          min: 5.0,
+          max: MediaQuery.of(context).size.width - 10.0,
+          value: _dimension,
+          onChanged: (double val) {
+            setState(() => _dimension = val);
+          },
+        ),
         Expanded(
           child: GridView.extent(
             shrinkWrap: true,

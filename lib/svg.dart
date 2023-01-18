@@ -1,17 +1,19 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
-import 'dart:typed_data';
+import 'dart:typed_data'; // ignore: unnecessary_import
 import 'dart:ui' show Picture;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart' show AssetBundle;
+import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 
 import 'parser.dart';
 import 'src/picture_provider.dart';
 import 'src/picture_stream.dart';
 import 'src/render_picture.dart';
+import 'src/svg/default_theme.dart';
+import 'src/svg/theme.dart';
+import 'src/utilities/file.dart';
 import 'src/vector_drawable.dart';
 
 /// Instance for [Svg]'s utility methods, which can produce a [DrawableRoot]
@@ -26,6 +28,12 @@ final Svg svg = Svg._();
 class Svg {
   Svg._();
 
+  /// A global override flag for [SvgPicture.cacheColorFilter].
+  ///
+  /// If this is null, the value in [SvgPicture.cacheColorFilter] is used. If it
+  /// is not null, it will override that value.
+  bool? cacheColorFilterOverride;
+
   /// Produces a [PictureInfo] from a [Uint8List] of SVG byte data (assumes UTF8 encoding).
   ///
   /// The `allowDrawingOutsideOfViewBox` parameter should be used with caution -
@@ -35,14 +43,18 @@ class Svg {
   ///
   /// The `colorFilter` property will be applied to any [Paint] objects used during drawing.
   ///
+  /// The `theme` argument, if provided, will override the default theme
+  /// used when parsing SVG elements.
+  ///
   /// The [key] will be used for debugging purposes.
-  FutureOr<PictureInfo> svgPictureDecoder(
+  Future<PictureInfo> svgPictureDecoder(
     Uint8List raw,
     bool allowDrawingOutsideOfViewBox,
-    ColorFilter colorFilter,
-    String key,
-  ) async {
-    final DrawableRoot svgRoot = await fromSvgBytes(raw, key);
+    ColorFilter? colorFilter,
+    String key, {
+    SvgTheme theme = const SvgTheme(),
+  }) async {
+    final DrawableRoot svgRoot = await fromSvgBytes(raw, key, theme: theme);
     final Picture pic = svgRoot.toPicture(
       clipToViewBox: allowDrawingOutsideOfViewBox == true ? false : true,
       colorFilter: colorFilter,
@@ -51,6 +63,7 @@ class Svg {
       picture: pic,
       viewport: svgRoot.viewport.viewBoxRect,
       size: svgRoot.viewport.size,
+      compatibilityTester: svgRoot.compatibilityTester,
     );
   }
 
@@ -63,34 +76,46 @@ class Svg {
   ///
   /// The `colorFilter` property will be applied to any [Paint] objects used during drawing.
   ///
+  /// The `theme` argument, if provided, will override the default theme
+  /// used when parsing SVG elements.
+  ///
   /// The [key] will be used for debugging purposes.
-  FutureOr<PictureInfo> svgPictureStringDecoder(
-      String raw,
-      bool allowDrawingOutsideOfViewBox,
-      ColorFilter colorFilter,
-      String key) async {
-    final DrawableRoot svg = await fromSvgString(raw, key);
+  Future<PictureInfo> svgPictureStringDecoder(
+    String raw,
+    bool allowDrawingOutsideOfViewBox,
+    ColorFilter? colorFilter,
+    String key, {
+    SvgTheme theme = const SvgTheme(),
+  }) async {
+    final DrawableRoot svgRoot = await fromSvgString(raw, key, theme: theme);
+    final Picture pic = svgRoot.toPicture(
+      clipToViewBox: allowDrawingOutsideOfViewBox == true ? false : true,
+      colorFilter: colorFilter,
+      size: svgRoot.viewport.viewBox,
+    );
     return PictureInfo(
-      picture: svg.toPicture(
-        clipToViewBox: allowDrawingOutsideOfViewBox == true ? false : true,
-        colorFilter: colorFilter,
-        size: svg.viewport.viewBox,
-      ),
-      viewport: svg.viewport.viewBoxRect,
-      size: svg.viewport.size,
+      picture: pic,
+      viewport: svgRoot.viewport.viewBoxRect,
+      size: svgRoot.viewport.size,
+      compatibilityTester: svgRoot.compatibilityTester,
     );
   }
 
-  /// Produces a [Drawableroot] from a [Uint8List] of SVG byte data (assumes UTF8 encoding).
+  /// Produces a [Drawableroot] from a [Uint8List] of SVG byte data (assumes
+  /// UTF8 encoding).
   ///
-  /// The [key] will be used for debugging purposes.
-  FutureOr<DrawableRoot> fromSvgBytes(Uint8List raw, String key) async {
+  /// The `key` will be used for debugging purposes.
+  Future<DrawableRoot> fromSvgBytes(
+    Uint8List raw,
+    String key, {
+    SvgTheme theme = const SvgTheme(),
+  }) async {
     // TODO(dnfield): do utf decoding in another thread?
     // Might just have to live with potentially slow(ish) decoding, this is causing errors.
     // See: https://github.com/dart-lang/sdk/issues/31954
     // See: https://github.com/flutter/flutter/blob/bf3bd7667f07709d0b817ebfcb6972782cfef637/packages/flutter/lib/src/services/asset_bundle.dart#L66
     // if (raw.lengthInBytes < 20 * 1024) {
-    return fromSvgString(utf8.decode(raw), key);
+    return fromSvgString(utf8.decode(raw), key, theme: theme);
     // } else {
     //   final String str =
     //       await compute(_utf8Decode, raw, debugLabel: 'UTF8 decode for SVG');
@@ -105,9 +130,13 @@ class Svg {
   /// Creates a [DrawableRoot] from a string of SVG data.
   ///
   /// The `key` is used for debugging purposes.
-  Future<DrawableRoot> fromSvgString(String rawSvg, String key) async {
+  Future<DrawableRoot> fromSvgString(
+    String rawSvg,
+    String key, {
+    SvgTheme theme = const SvgTheme(),
+  }) async {
     final SvgParser parser = SvgParser();
-    return await parser.parse(rawSvg, key: key);
+    return await parser.parse(rawSvg, theme: theme, key: key);
   }
 }
 
@@ -128,12 +157,12 @@ class Svg {
 ///  * [PictureCache], which holds images that may be reused.
 Future<void> precachePicture(
   PictureProvider provider,
-  BuildContext context, {
-  Rect viewBox,
-  ColorFilter colorFilterOverride,
-  Color color,
-  BlendMode colorBlendMode,
-  PictureErrorListener onError,
+  BuildContext? context, {
+  Rect? viewBox,
+  ColorFilter? colorFilterOverride,
+  Color? color,
+  BlendMode? colorBlendMode,
+  PictureErrorListener? onError,
 }) {
   final PictureConfiguration config = createLocalPictureConfiguration(
     context,
@@ -143,19 +172,19 @@ Future<void> precachePicture(
     colorBlendMode: colorBlendMode,
   );
   final Completer<void> completer = Completer<void>();
-  PictureStream stream;
+  PictureStream? stream;
 
-  void listener(PictureInfo picture, bool synchronous) {
+  void listener(PictureInfo? picture, bool synchronous) {
     completer.complete();
     stream?.removeListener(listener);
   }
 
-  void errorListener(dynamic exception, StackTrace stackTrace) {
+  void errorListener(Object exception, StackTrace stackTrace) {
     if (onError != null) {
       onError(exception, stackTrace);
     } else {
       FlutterError.reportError(FlutterErrorDetails(
-        context: 'picture failed to precache',
+        context: ErrorDescription('picture failed to precache'),
         library: 'SVG',
         exception: exception,
         stack: stackTrace,
@@ -201,7 +230,7 @@ class SvgPicture extends StatefulWidget {
   /// If [excludeFromSemantics] is true, then [semanticLabel] will be ignored.
   const SvgPicture(
     this.pictureProvider, {
-    Key key,
+    Key? key,
     this.width,
     this.height,
     this.fit = BoxFit.contain,
@@ -209,8 +238,12 @@ class SvgPicture extends StatefulWidget {
     this.matchTextDirection = false,
     this.allowDrawingOutsideViewBox = false,
     this.placeholderBuilder,
+    this.colorFilter,
     this.semanticsLabel,
     this.excludeFromSemantics = false,
+    this.clipBehavior = Clip.hardEdge,
+    this.cacheColorFilter = false,
+    this.theme,
   }) : super(key: key);
 
   /// Instantiates a widget that renders an SVG picture from an [AssetBundle].
@@ -238,6 +271,9 @@ class SvgPicture extends StatefulWidget {
   ///
   /// The `color` and `colorBlendMode` arguments, if specified, will be used to set a
   /// [ColorFilter] on any [Paint]s created for this drawing.
+  ///
+  /// The `theme` argument, if provided, will override the default theme
+  /// used when parsing SVG elements.
   ///
   /// ## Assets in packages
   ///
@@ -292,28 +328,35 @@ class SvgPicture extends StatefulWidget {
   /// If [excludeFromSemantics] is true, then [semanticLabel] will be ignored.
   SvgPicture.asset(
     String assetName, {
-    Key key,
+    Key? key,
     this.matchTextDirection = false,
-    AssetBundle bundle,
-    String package,
+    AssetBundle? bundle,
+    String? package,
     this.width,
     this.height,
     this.fit = BoxFit.contain,
     this.alignment = Alignment.center,
     this.allowDrawingOutsideViewBox = false,
     this.placeholderBuilder,
-    Color color,
+    Color? color,
     BlendMode colorBlendMode = BlendMode.srcIn,
     this.semanticsLabel,
     this.excludeFromSemantics = false,
+    this.clipBehavior = Clip.hardEdge,
+    this.cacheColorFilter = false,
+    this.theme,
   })  : pictureProvider = ExactAssetPicture(
-            allowDrawingOutsideViewBox == true
-                ? svgStringDecoderOutsideViewBox
-                : svgStringDecoder,
-            assetName,
-            bundle: bundle,
-            package: package,
-            colorFilter: _getColorFilter(color, colorBlendMode)),
+          allowDrawingOutsideViewBox == true
+              ? svgStringDecoderOutsideViewBoxBuilder
+              : svgStringDecoderBuilder,
+          assetName,
+          bundle: bundle,
+          package: package,
+          colorFilter: svg.cacheColorFilterOverride ?? cacheColorFilter
+              ? _getColorFilter(color, colorBlendMode)
+              : null,
+        ),
+        colorFilter = _getColorFilter(color, colorBlendMode),
         super(key: key);
 
   /// Creates a widget that displays a [PictureStream] obtained from the network.
@@ -339,6 +382,9 @@ class SvgPicture extends StatefulWidget {
   /// The `color` and `colorBlendMode` arguments, if specified, will be used to set a
   /// [ColorFilter] on any [Paint]s created for this drawing.
   ///
+  /// The `theme` argument, if provided, will override the default theme
+  /// used when parsing SVG elements.
+  ///
   /// All network images are cached regardless of HTTP headers.
   ///
   /// An optional `headers` argument can be used to send custom HTTP headers
@@ -347,8 +393,8 @@ class SvgPicture extends StatefulWidget {
   /// If [excludeFromSemantics] is true, then [semanticLabel] will be ignored.
   SvgPicture.network(
     String url, {
-    Key key,
-    Map<String, String> headers,
+    Key? key,
+    Map<String, String>? headers,
     this.width,
     this.height,
     this.fit = BoxFit.contain,
@@ -356,17 +402,24 @@ class SvgPicture extends StatefulWidget {
     this.matchTextDirection = false,
     this.allowDrawingOutsideViewBox = false,
     this.placeholderBuilder,
-    Color color,
+    Color? color,
     BlendMode colorBlendMode = BlendMode.srcIn,
     this.semanticsLabel,
     this.excludeFromSemantics = false,
+    this.clipBehavior = Clip.hardEdge,
+    this.cacheColorFilter = false,
+    this.theme,
   })  : pictureProvider = NetworkPicture(
-            allowDrawingOutsideViewBox == true
-                ? svgByteDecoderOutsideViewBox
-                : svgByteDecoder,
-            url,
-            headers: headers,
-            colorFilter: _getColorFilter(color, colorBlendMode)),
+          allowDrawingOutsideViewBox == true
+              ? svgByteDecoderOutsideViewBoxBuilder
+              : svgByteDecoderBuilder,
+          url,
+          headers: headers,
+          colorFilter: svg.cacheColorFilterOverride ?? cacheColorFilter
+              ? _getColorFilter(color, colorBlendMode)
+              : null,
+        ),
+        colorFilter = _getColorFilter(color, colorBlendMode),
         super(key: key);
 
   /// Creates a widget that displays a [PictureStream] obtained from a [File].
@@ -392,13 +445,16 @@ class SvgPicture extends StatefulWidget {
   /// The `color` and `colorBlendMode` arguments, if specified, will be used to set a
   /// [ColorFilter] on any [Paint]s created for this drawing.
   ///
+  /// The `theme` argument, if provided, will override the default theme
+  /// used when parsing SVG elements.
+  ///
   /// On Android, this may require the
   /// `android.permission.READ_EXTERNAL_STORAGE` permission.
   ///
   /// If [excludeFromSemantics] is true, then [semanticLabel] will be ignored.
   SvgPicture.file(
     File file, {
-    Key key,
+    Key? key,
     this.width,
     this.height,
     this.fit = BoxFit.contain,
@@ -406,16 +462,23 @@ class SvgPicture extends StatefulWidget {
     this.matchTextDirection = false,
     this.allowDrawingOutsideViewBox = false,
     this.placeholderBuilder,
-    Color color,
+    Color? color,
     BlendMode colorBlendMode = BlendMode.srcIn,
     this.semanticsLabel,
     this.excludeFromSemantics = false,
+    this.clipBehavior = Clip.hardEdge,
+    this.cacheColorFilter = false,
+    this.theme,
   })  : pictureProvider = FilePicture(
-            allowDrawingOutsideViewBox == true
-                ? svgByteDecoderOutsideViewBox
-                : svgByteDecoder,
-            file,
-            colorFilter: _getColorFilter(color, colorBlendMode)),
+          allowDrawingOutsideViewBox == true
+              ? svgByteDecoderOutsideViewBoxBuilder
+              : svgByteDecoderBuilder,
+          file,
+          colorFilter: svg.cacheColorFilterOverride ?? cacheColorFilter
+              ? _getColorFilter(color, colorBlendMode)
+              : null,
+        ),
+        colorFilter = _getColorFilter(color, colorBlendMode),
         super(key: key);
 
   /// Creates a widget that displays a [PictureStream] obtained from a [Uint8List].
@@ -441,10 +504,13 @@ class SvgPicture extends StatefulWidget {
   /// The `color` and `colorBlendMode` arguments, if specified, will be used to set a
   /// [ColorFilter] on any [Paint]s created for this drawing.
   ///
+  /// The `theme` argument, if provided, will override the default theme
+  /// used when parsing SVG elements.
+  ///
   /// If [excludeFromSemantics] is true, then [semanticLabel] will be ignored.
   SvgPicture.memory(
     Uint8List bytes, {
-    Key key,
+    Key? key,
     this.width,
     this.height,
     this.fit = BoxFit.contain,
@@ -452,16 +518,23 @@ class SvgPicture extends StatefulWidget {
     this.matchTextDirection = false,
     this.allowDrawingOutsideViewBox = false,
     this.placeholderBuilder,
-    Color color,
+    Color? color,
     BlendMode colorBlendMode = BlendMode.srcIn,
     this.semanticsLabel,
     this.excludeFromSemantics = false,
+    this.clipBehavior = Clip.hardEdge,
+    this.cacheColorFilter = false,
+    this.theme,
   })  : pictureProvider = MemoryPicture(
-            allowDrawingOutsideViewBox == true
-                ? svgByteDecoderOutsideViewBox
-                : svgByteDecoder,
-            bytes,
-            colorFilter: _getColorFilter(color, colorBlendMode)),
+          allowDrawingOutsideViewBox == true
+              ? svgByteDecoderOutsideViewBoxBuilder
+              : svgByteDecoderBuilder,
+          bytes,
+          colorFilter: svg.cacheColorFilterOverride ?? cacheColorFilter
+              ? _getColorFilter(color, colorBlendMode)
+              : null,
+        ),
+        colorFilter = _getColorFilter(color, colorBlendMode),
         super(key: key);
 
   /// Creates a widget that displays a [PictureStream] obtained from a [String].
@@ -487,10 +560,13 @@ class SvgPicture extends StatefulWidget {
   /// The `color` and `colorBlendMode` arguments, if specified, will be used to set a
   /// [ColorFilter] on any [Paint]s created for this drawing.
   ///
+  /// The `theme` argument, if provided, will override the default theme
+  /// used when parsing SVG elements.
+  ///
   /// If [excludeFromSemantics] is true, then [semanticLabel] will be ignored.
   SvgPicture.string(
-    String bytes, {
-    Key key,
+    String string, {
+    Key? key,
     this.width,
     this.height,
     this.fit = BoxFit.contain,
@@ -498,16 +574,23 @@ class SvgPicture extends StatefulWidget {
     this.matchTextDirection = false,
     this.allowDrawingOutsideViewBox = false,
     this.placeholderBuilder,
-    Color color,
+    Color? color,
     BlendMode colorBlendMode = BlendMode.srcIn,
     this.semanticsLabel,
     this.excludeFromSemantics = false,
+    this.clipBehavior = Clip.hardEdge,
+    this.cacheColorFilter = false,
+    this.theme,
   })  : pictureProvider = StringPicture(
-            allowDrawingOutsideViewBox == true
-                ? svgStringDecoderOutsideViewBox
-                : svgStringDecoder,
-            bytes,
-            colorFilter: _getColorFilter(color, colorBlendMode)),
+          allowDrawingOutsideViewBox == true
+              ? svgStringDecoderOutsideViewBoxBuilder
+              : svgStringDecoderBuilder,
+          string,
+          colorFilter: svg.cacheColorFilterOverride ?? cacheColorFilter
+              ? _getColorFilter(color, colorBlendMode)
+              : null,
+        ),
+        colorFilter = _getColorFilter(color, colorBlendMode),
         super(key: key);
 
   /// The default placeholder for a SVG that may take time to parse or
@@ -515,38 +598,63 @@ class SvgPicture extends StatefulWidget {
   static WidgetBuilder defaultPlaceholderBuilder =
       (BuildContext ctx) => const LimitedBox();
 
-  static ColorFilter _getColorFilter(Color color, BlendMode colorBlendMode) =>
-      color == null
-          ? null
-          : ColorFilter.mode(color, colorBlendMode ?? BlendMode.srcIn);
+  static ColorFilter? _getColorFilter(Color? color, BlendMode colorBlendMode) =>
+      color == null ? null : ColorFilter.mode(color, colorBlendMode);
 
-  /// A [PictureInfoDecoder] for [Uint8List]s that will clip to the viewBox.
-  static final PictureInfoDecoder<Uint8List> svgByteDecoder =
-      (Uint8List bytes, ColorFilter colorFilter, String key) =>
-          svg.svgPictureDecoder(bytes, false, colorFilter, key);
+  /// A [PictureInfoDecoderBuilder] for [Uint8List]s that will clip to the viewBox.
+  static final PictureInfoDecoderBuilder<Uint8List> svgByteDecoderBuilder =
+      (SvgTheme theme) =>
+          (Uint8List bytes, ColorFilter? colorFilter, String key) =>
+              svg.svgPictureDecoder(
+                bytes,
+                false,
+                colorFilter,
+                key,
+                theme: theme,
+              );
 
-  /// A [PictureInfoDecoder] for strings that will clip to the viewBox.
-  static final PictureInfoDecoder<String> svgStringDecoder =
-      (String data, ColorFilter colorFilter, String key) =>
-          svg.svgPictureStringDecoder(data, false, colorFilter, key);
+  /// A [PictureInfoDecoderBuilder] for strings that will clip to the viewBox.
+  static final PictureInfoDecoderBuilder<String> svgStringDecoderBuilder =
+      (SvgTheme theme) => (String data, ColorFilter? colorFilter, String key) =>
+          svg.svgPictureStringDecoder(
+            data,
+            false,
+            colorFilter,
+            key,
+            theme: theme,
+          );
 
-  /// A [PictureInfoDecoder] for [Uint8List]s that will not clip to the viewBox.
-  static final PictureInfoDecoder<Uint8List> svgByteDecoderOutsideViewBox =
-      (Uint8List bytes, ColorFilter colorFilter, String key) =>
-          svg.svgPictureDecoder(bytes, true, colorFilter, key);
+  /// A [PictureInfoDecoderBuilder] for [Uint8List]s that will not clip to the viewBox.
+  static final PictureInfoDecoderBuilder<Uint8List>
+      svgByteDecoderOutsideViewBoxBuilder = (SvgTheme theme) =>
+          (Uint8List bytes, ColorFilter? colorFilter, String key) =>
+              svg.svgPictureDecoder(
+                bytes,
+                true,
+                colorFilter,
+                key,
+                theme: theme,
+              );
 
-  /// A [PictureInfoDecoder] for [String]s that will not clip to the viewBox.
-  static final PictureInfoDecoder<String> svgStringDecoderOutsideViewBox =
-      (String data, ColorFilter colorFilter, String key) =>
-          svg.svgPictureStringDecoder(data, true, colorFilter, key);
+  /// A [PictureInfoDecoderBuilder] for [String]s that will not clip to the viewBox.
+  static final PictureInfoDecoderBuilder<String>
+      svgStringDecoderOutsideViewBoxBuilder = (SvgTheme theme) =>
+          (String data, ColorFilter? colorFilter, String key) =>
+              svg.svgPictureStringDecoder(
+                data,
+                true,
+                colorFilter,
+                key,
+                theme: theme,
+              );
 
   /// If specified, the width to use for the SVG.  If unspecified, the SVG
   /// will take the width of its parent.
-  final double width;
+  final double? width;
 
   /// If specified, the height to use for the SVG.  If unspecified, the SVG
   /// will take the height of its parent.
-  final double height;
+  final double? height;
 
   /// How to inscribe the picture into the space allocated during layout.
   /// The default is [BoxFit.contain].
@@ -574,13 +682,13 @@ class SvgPicture extends StatefulWidget {
   ///    specify an [AlignmentGeometry].
   ///  * [AlignmentDirectional], like [Alignment] for specifying alignments
   ///    relative to text direction.
-  final Alignment alignment;
+  final AlignmentGeometry alignment;
 
   /// The [PictureProvider] used to resolve the SVG.
   final PictureProvider pictureProvider;
 
   /// The placeholder to use while fetching, decoding, and parsing the SVG data.
-  final WidgetBuilder placeholderBuilder;
+  final WidgetBuilder? placeholderBuilder;
 
   /// If true, will horizontally flip the picture in [TextDirection.rtl] contexts.
   final bool matchTextDirection;
@@ -593,7 +701,7 @@ class SvgPicture extends StatefulWidget {
   ///
   /// The value indicates the purpose of the picture, and will be
   /// read out by screen readers.
-  final String semanticsLabel;
+  final String? semanticsLabel;
 
   /// Whether to exclude this picture from semantics.
   ///
@@ -601,24 +709,47 @@ class SvgPicture extends StatefulWidget {
   /// application.
   final bool excludeFromSemantics;
 
+  /// The content will be clipped (or not) according to this option.
+  ///
+  /// See the enum [Clip] for details of all possible options and their common
+  /// use cases.
+  ///
+  /// Defaults to [Clip.hardEdge], and must not be null.
+  final Clip clipBehavior;
+
+  /// The color filter, if any, to apply to this widget.
+  final ColorFilter? colorFilter;
+
+  /// Whether to cache the picture with the [colorFilter] applied or not.
+  ///
+  /// This value should be set to true if the same SVG will be rendered with
+  /// multiple colors, but false if it will always (or almost always) be
+  /// rendered with the same [colorFilter].
+  ///
+  /// If [Svg.cacheColorFilterOverride] is not null, it will override this value
+  /// for all widgets, regardless of what is specified for an individual widget.
+  ///
+  /// This defaults to false and must not be null.
+  final bool cacheColorFilter;
+
+  /// The theme used when parsing SVG elements.
+  final SvgTheme? theme;
+
   @override
   State<SvgPicture> createState() => _SvgPictureState();
 }
 
 class _SvgPictureState extends State<SvgPicture> {
-  PictureInfo _picture;
-  PictureStream _pictureStream;
+  PictureInfo? _picture;
+  PictureHandle? _handle;
+  PictureStream? _pictureStream;
   bool _isListeningToStream = false;
 
   @override
   void didChangeDependencies() {
+    _updatePictureProvider();
     _resolveImage();
-
-    if (TickerMode.of(context)) {
-      _listenToStream();
-    } else {
-      _stopListeningToStream();
-    }
+    _listenToStream();
     super.didChangeDependencies();
   }
 
@@ -626,25 +757,63 @@ class _SvgPictureState extends State<SvgPicture> {
   void didUpdateWidget(SvgPicture oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.pictureProvider != oldWidget.pictureProvider) {
+      _updatePictureProvider();
       _resolveImage();
     }
   }
 
   @override
   void reassemble() {
+    _updatePictureProvider();
     _resolveImage(); // in case the image cache was flushed
     super.reassemble();
+  }
+
+  /// Updates the `currentColor` of the picture provider based on
+  /// either the widget's [SvgTheme] or an inherited [DefaultSvgTheme].
+  ///
+  /// Updates the `fontSize` of the picture provider based on
+  /// either the widget's [SvgTheme], an inherited [DefaultSvgTheme]
+  /// or an inherited [DefaultTextStyle]. If the property does not exist,
+  /// then the font size defaults to 14.
+  void _updatePictureProvider() {
+    final SvgTheme? defaultSvgTheme = DefaultSvgTheme.of(context)?.theme;
+    final TextStyle defaultTextStyle = DefaultTextStyle.of(context).style;
+
+    final Color currentColor = widget.theme?.currentColor ??
+        defaultSvgTheme?.currentColor ??
+        const Color(0xFF000000);
+
+    final double fontSize = widget.theme?.fontSize ??
+        defaultSvgTheme?.fontSize ??
+        defaultTextStyle.fontSize ??
+        // Fallback to the default font size if a font size is missing in DefaultTextStyle.
+        // See: https://api.flutter.dev/flutter/painting/TextStyle/fontSize.html
+        14.0;
+
+    final double xHeight = widget.theme?.xHeight ??
+        defaultSvgTheme?.xHeight ??
+        // Fallback to the font size divided by 2.
+        fontSize / 2;
+
+    widget.pictureProvider.theme = SvgTheme(
+      currentColor: currentColor,
+      fontSize: fontSize,
+      xHeight: xHeight,
+    );
   }
 
   void _resolveImage() {
     final PictureStream newStream = widget.pictureProvider
         .resolve(createLocalPictureConfiguration(context));
-    assert(newStream != null);
+    assert(newStream != null); // ignore: unnecessary_null_comparison
     _updateSourceStream(newStream);
   }
 
-  void _handleImageChanged(PictureInfo imageInfo, bool synchronousCall) {
+  void _handleImageChanged(PictureInfo? imageInfo, bool synchronousCall) {
     setState(() {
+      _handle?.dispose();
+      _handle = imageInfo?.createHandle();
       _picture = imageInfo;
     });
   }
@@ -653,16 +822,17 @@ class _SvgPictureState extends State<SvgPicture> {
   // registration from the old stream to the new stream (if a listener was
   // registered).
   void _updateSourceStream(PictureStream newStream) {
-    if (_pictureStream?.key == newStream?.key) {
+    if (_pictureStream?.key == newStream.key) {
       return;
     }
 
-    if (_isListeningToStream)
-      _pictureStream.removeListener(_handleImageChanged);
+    if (_isListeningToStream) {
+      _pictureStream!.removeListener(_handleImageChanged);
+    }
 
     _pictureStream = newStream;
     if (_isListeningToStream) {
-      _pictureStream.addListener(_handleImageChanged);
+      _pictureStream!.addListener(_handleImageChanged);
     }
   }
 
@@ -670,7 +840,7 @@ class _SvgPictureState extends State<SvgPicture> {
     if (_isListeningToStream) {
       return;
     }
-    _pictureStream.addListener(_handleImageChanged);
+    _pictureStream!.addListener(_handleImageChanged);
     _isListeningToStream = true;
   }
 
@@ -678,7 +848,7 @@ class _SvgPictureState extends State<SvgPicture> {
     if (!_isListeningToStream) {
       return;
     }
-    _pictureStream.removeListener(_handleImageChanged);
+    _pictureStream!.removeListener(_handleImageChanged);
     _isListeningToStream = false;
   }
 
@@ -686,28 +856,19 @@ class _SvgPictureState extends State<SvgPicture> {
   void dispose() {
     assert(_pictureStream != null);
     _stopListeningToStream();
+    _handle?.dispose();
+    _handle = null;
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    Widget _maybeWrapWithSemantics(Widget child) {
-      if (widget.excludeFromSemantics) {
-        return child;
-      }
-      return Semantics(
-        container: widget.semanticsLabel != null,
-        image: true,
-        label: widget.semanticsLabel == null ? '' : widget.semanticsLabel,
-        child: child,
-      );
-    }
-
+    late Widget child;
     if (_picture != null) {
-      final Rect viewport = Offset.zero & _picture.viewport.size;
+      final Rect viewport = Offset.zero & _picture!.viewport.size;
 
-      double width = widget.width;
-      double height = widget.height;
+      double? width = widget.width;
+      double? height = widget.height;
       if (width == null && height == null) {
         width = viewport.width;
         height = viewport.height;
@@ -717,35 +878,49 @@ class _SvgPictureState extends State<SvgPicture> {
         height = width / viewport.width * viewport.height;
       }
 
-      return _maybeWrapWithSemantics(
-        SizedBox(
-          width: width,
-          height: height,
-          child: FittedBox(
-            fit: widget.fit,
-            alignment: widget.alignment,
-            child: SizedBox.fromSize(
-              size: viewport.size,
-              child: RawPicture(
-                _picture,
-                matchTextDirection: widget.matchTextDirection,
-                allowDrawingOutsideViewBox: widget.allowDrawingOutsideViewBox,
-              ),
+      child = SizedBox(
+        width: width,
+        height: height,
+        child: FittedBox(
+          fit: widget.fit,
+          alignment: widget.alignment,
+          clipBehavior: widget.clipBehavior,
+          child: SizedBox.fromSize(
+            size: viewport.size,
+            child: RawPicture(
+              _picture,
+              matchTextDirection: widget.matchTextDirection,
+              allowDrawingOutsideViewBox: widget.allowDrawingOutsideViewBox,
             ),
           ),
         ),
       );
-    }
 
-    return _maybeWrapWithSemantics(
-      widget.placeholderBuilder == null
+      if (widget.pictureProvider.colorFilter == null &&
+          widget.colorFilter != null) {
+        child = ColorFiltered(
+          colorFilter: widget.colorFilter!,
+          child: child,
+        );
+      }
+    } else {
+      child = widget.placeholderBuilder == null
           ? _getDefaultPlaceholder(context, widget.width, widget.height)
-          : widget.placeholderBuilder(context),
-    );
+          : widget.placeholderBuilder!(context);
+    }
+    if (!widget.excludeFromSemantics) {
+      child = Semantics(
+        container: widget.semanticsLabel != null,
+        image: true,
+        label: widget.semanticsLabel == null ? '' : widget.semanticsLabel,
+        child: child,
+      );
+    }
+    return child;
   }
 
   Widget _getDefaultPlaceholder(
-      BuildContext context, double width, double height) {
+      BuildContext context, double? width, double? height) {
     if (width != null || height != null) {
       return SizedBox(width: width, height: height);
     }

@@ -3,7 +3,7 @@
 [![Pub](https://img.shields.io/pub/v/flutter_svg.svg)](https://pub.dartlang.org/packages/flutter_svg) [![Build Status](https://travis-ci.org/dnfield/flutter_svg.svg?branch=master)](https://travis-ci.org/dnfield/flutter_svg) [![Coverage Status](https://coveralls.io/repos/github/dnfield/flutter_svg/badge.svg?branch=master)](https://coveralls.io/github/dnfield/flutter_svg?branch=master)
 
 <!-- markdownlint-disable MD033 -->
-<img src="/../master/example/assets/flutter_logo.svg?sanitize=true" width="200px" alt="Flutter Logo which can be rendered by this package!">
+<img src="https://raw.githubusercontent.com/dnfield/flutter_svg/7d374d7107561cbd906d7c0ca26fef02cc01e7c8/example/assets/flutter_logo.svg?sanitize=true" width="200px" alt="Flutter Logo which can be rendered by this package!">
 <!-- markdownlint-enable MD033 -->
 
 Draw SVG (and _some_ Android VectorDrawable (XML)) files on a Flutter Widget.
@@ -28,7 +28,7 @@ Basic usage (to create an SVG rendering widget from an asset):
 
 ```dart
 final String assetName = 'assets/image.svg';
-final Widget svg = new SvgPicture.asset(
+final Widget svg = SvgPicture.asset(
   assetName,
   semanticsLabel: 'Acme Logo'
 );
@@ -38,7 +38,7 @@ You can color/tint the image like so:
 
 ```dart
 final String assetName = 'assets/up_arrow.svg';
-final Widget svgIcon = new SvgPicture.asset(
+final Widget svgIcon = SvgPicture.asset(
   assetName,
   color: Colors.red,
   semanticsLabel: 'A red up arrow'
@@ -57,14 +57,14 @@ parsing/loading (normally only relevant for network access).
 ```dart
 // Will print error messages to the console.
 final String assetName = 'assets/image_that_does_not_exist.svg';
-final Widget svg = new SvgPicture.asset(
+final Widget svg = SvgPicture.asset(
   assetName,
 );
 
-final Widget networkSvg = new SvgPicture.network(
+final Widget networkSvg = SvgPicture.network(
   'https://site-that-takes-a-while.com/image.svg',
   semanticsLabel: 'A shark?!',
-  placeholderBuilder: (BuildContext context) => new Container(
+  placeholderBuilder: (BuildContext context) => Container(
       padding: const EdgeInsets.all(30.0),
       child: const CircularProgressIndicator()),
 );
@@ -73,7 +73,7 @@ final Widget networkSvg = new SvgPicture.network(
 If you'd like to render the SVG to some other canvas, you can do something like:
 
 ```dart
-import 'package:flutter_svg/flutter_svg.dart';
+import 'package:custom_flutter_svg/flutter_svg.dart';
 final String rawSvg = '''<svg viewBox="...">...</svg>''';
 final DrawableRoot svgRoot = await svg.fromSvgString(rawSvg, rawSvg);
 
@@ -88,7 +88,8 @@ svgRoot.scaleCanvasToViewBox(canvas);
 // Optional, but probably normally desireable: ensure the SVG isn't rendered
 // outside of the viewbox bounds
 svgRoot.clipCanvasToViewBox(canvas);
-svgRoot.draw(canvas, size);
+// The second parameter is not used
+svgRoot.draw(canvas, null);
 ```
 
 The `SvgPicture` helps to automate this logic, and it provides some convenience
@@ -97,13 +98,27 @@ wrappers for getting assets from multiple sources and caching the resultant
 certainly can do that in Flutter, but you then lose some of the benefit of
 having a vector format to begin with.
 
-While I'm making every effort to avoid needlessly changing the API, it's not
-guarnateed to be stable yet (hence the pre-1.0.0 version). To date, the biggest
-change is deprecating the `SvgImage` widgets in favor of `SvgPicture` - it
-became very confusing to maintain that name, as `Picture`s are the underlying
-mechanism for rendering rather than `Image`s.
-
 See [main.dart](/../master/example/lib/main.dart) for a complete sample.
+
+## Check SVG compatibility
+
+As not all SVG features are supported by this library (see below), sometimes we have to dynamically
+check if an SVG contains any unsupported features resulting in broken images.
+You might also want to throw errors in tests, but only warn about them at runtime.
+This can be done by using the snippet below:
+
+```dart
+final SvgParser parser = SvgParser();
+try {
+  parser.parse(svgString, warningsAsErrors: true);
+  print('SVG is supported');
+} catch (e) {
+  print('SVG contains unsupported features');
+}
+```
+
+> Note:
+> The library currently only detects unsupported elements (like the `<style>`-tag), but not unsupported attributes.
 
 ## Use Cases
 
@@ -114,36 +129,21 @@ See [main.dart](/../master/example/lib/main.dart) for a complete sample.
 - You want to load SVGs dynamically from network sources at runtime.
 - You want to paint SVG data and render it to an image.
 
-## TODO
-
-This list is not very well ordered. I'm mainly picking up things that seem
-interesting or useful, or where I've gotten a request to fix something/example
-of something that's broken.
-
-- Text support (partially implemented).
-- Support Radial gradients that use percentages in the offsets.
-- Dash path with percentage dasharray values (need good examples).
-- Display/visibility support. My hunch is that this is usually used more for SVG
-  specific interactivity, which isn't supported or planned.
-- Inheritance of inheritable properties (~~necessary? preprocess?~~ significant
-  progress, still some rough edges, particularly for definitions).
-- Support for minimal CSS/styles? See also [usvg](https://github.com/RazrFalcon/resvg/tree/master/usvg)
-  (partial style attribute mostly supported).
-- Markers.
-- Filters/effects (will require upstream engine changes, but doable).
-- Android Vector Drawable support beyond PoC - I'm willing to put more time into
-  this if there's actually demand, but it doesn't come up often.
-
-## Probably out of scope/non-goals
+## Out of scope/non-goals
 
 - SMIL animations. That just seems crazy. I think it'll be possible to animate
   the SVG but probably in a more Flutter driven way.
 - Interactivity/events in SVG.
-- Full (any?) CSS support - preprocess your SVGs (perhaps with [usvg](https://github.com/RazrFalcon/resvg/tree/master/usvg) or [scour](https://github.com/scour-project/scour) to get rid of all CSS?).
+- Any CSS support - preprocess your SVGs (perhaps with [usvg](https://github.com/RazrFalcon/resvg/tree/master/usvg) or [scour](https://github.com/scour-project/scour) to get rid of all CSS?).
 - Scripting in SVGs
 - Foreign elements
 - Rendering properties/hints
 
+## Recommended Adobe Illustrator SVG Configuration
+- In Styling: choose Presentation Attributes instead of Inline CSS because CSS is not fully supported.
+- In Images: choose Embded not Linked to other file to get a single svg with no dependency to other files.
+- In Objects IDs: choose layer names to add every layer name to svg tags or you can use minimal,it is optional.
+![Export configuration](https://user-images.githubusercontent.com/2842459/62599914-91de9c00-b8fe-11e9-8fb7-4af57d5100f7.png)
 ## SVG sample attribution
 
 SVGs in `/assets/w3samples` pulled from [W3 sample files](https://dev.w3.org/SVG/tools/svgweb/samples/svg-files/)
@@ -168,6 +168,12 @@ The Dart logo is from
 SVGs in `/assets/noto-emoji` are from [Google i18n noto-emoji](https://github.com/googlei18n/noto-emoji),
 licensed under the Apache license.
 
-Please submit SVGs this can't render properly (e.g. that don't render here the
+Please submit SVGs that can't render properly (e.g. that don't render here the
 way they do in chrome), as long as they're not using anything "probably out of
 scope" (above).
+
+## Alternatives
+
+- [Rive](https://rive.app/) supports importing SVGs and animating vector graphics.
+- [FlutterShapeMaker](https://fluttershapemaker.com) supports converting SVGs to [CustomPaint](https://api.flutter.dev/flutter/widgets/CustomPaint-class.html) widgets.
+- [Jovial SVG](https://pub.dev/packages/jovial_svg) supports a slightly different feature set and a fast binary format.

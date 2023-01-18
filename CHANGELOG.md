@@ -1,5 +1,263 @@
 # CHANGES
 
+## 1.1.6
+
+- Fix transforms on image tags, clipPaths.
+- Avoid painting zero-width strokes.
+
+## 1.1.5
+
+- More permissive about color strings.
+
+## 1.1.4
+
+- Handle default image width/height properly.
+
+## 1.1.3
+
+- Handle `pt` values.
+
+## 1.1.2
+
+- Update path parsing/drawing dependencies to fix arc parsing bug.
+
+## 1.1.1+1
+
+- Fix regression introduced in 1.1.1
+- Update fix for fill/stroke inheritence when currentColor is specified in the
+  SVG but not in the theme.
+
+## 1.1.1
+
+- Fix a bug introduced in 1.1.0 related to fill/stroke inheritence.
+- Explicit dev_dependency on flutter_lints
+- Avoid deprecated API from Flutter.
+
+## 1.1.0
+
+- Respect stroke* properties when a paint definition is used for a stroke.
+- Respect stroke* properties from groups with no `@stroke` property.
+- Bump package versions.
+
+## 1.0.3+1
+
+- Fix bugs in picture disposal.
+
+## 1.0.3
+
+- Use `longestLine` rather than `minIntrinsicWidth` to place text.
+- Avoid unnecessary painting when a picture doesn't actually change in
+  [RenderPicture].
+
+## 1.0.2
+
+- Avoid cache invalidation when `currentColor` or font based units are not used.
+- Support `rem` units.
+
+## 1.0.1
+
+- Fix bug with incorrect fills in some cases of `<use>` elements.
+- Analysis cleanup of Dart code.
+- Fix bug where self-closing `<g>` tags could alter rendering.
+- Fix bug where an invalid `@stroke-dasharray` could cause an infinite loop.
+- Fix bugs related to nested `<g>` elements in `<defs>`.
+- Remove unnecessary `sync*` related code.
+
+## 1.0.0
+
+- New widget/RenderObject implementation to avoid rebuilds/paints when
+  near or overlapping an animating widget. Also should improve raster
+  cacheability.
+- Correctly list web as a supported platform.
+- Support for em/ex units.
+- Stable 1.0.0 release.
+
+## 0.23.0+1
+
+- Missing commit that reduced breakages introduced in 0.23.0
+
+## 0.23.0
+
+- Support for currentColor
+- Some API breaks around PictureProvider to support currentColor
+- Support for `xml:space`
+- Support for `text-decoration`
+- Support for `font-style`
+
+## 0.22.1
+
+- Pick up performance improvements in path_parsing 0.2.1
+- Performance improvements in XML parsing of SVGs.
+
+## 0.22.0
+
+- Expose `PictureCache` on `PictureProvider`, and deprecate
+  `PictureProvider.cacheCount` and `PictureProvider.clearCache`. This is
+  intended to allow users to set a maximum cache size, which was previously
+  impossible.
+
+## 0.21.0+1
+
+- Fix alignment/sizing issues introduced in 0.21.0
+
+## 0.21.0
+
+- Stable nullsafe release.
+
+## 0.21.0-nullsafety.1
+
+- Fix bug introduced when width and height are both null on the widget.
+- Use more efficient method for XML attribute parsing.
+
+## 0.21.0-nullsafety.0
+
+- Fix sizing when both width and height are null. This is potentially breaking.
+- Bump versions to stable nullsafe when possible
+- Update README with links to alternative implementations of SVG in Flutter.
+- Attempt to report file source/key when errors happen.
+- Add missing platforms to example project, update Android embedding.
+- Minor fixes for future error handling to respect new Dart rules/expectations.
+
+## 0.20.0-nullsafety.4
+
+- Adds option `warningsAsErrors` that throws errors when detecting unsupported
+  SVG elements.
+
+## 0.20.0-nullsafety.3
+
+- Fix broken image for pub.
+
+## 0.20.0-nullsafety.2
+
+- Fix bug where HTTP headers were not passed along to the HTTP client.
+
+## 0.20.0-nullsafety.1
+
+- Remove unnecessary package:collection dependency
+
+## 0.20.0-nullsafety.0
+
+- Initial release with null safety
+- Remove dead code
+- Fix up incorrect `catchError` usages
+
+## 0.19.2+1
+
+- Fix a bug where color filters were applied when they should not be.
+
+## 0.19.2
+
+- Allow for opt-in/out of color filter caching behavior, undeprecate color
+  filtering on the providers, and allow for a global override.
+
+## 0.19.1
+
+- Fix color filtering when BlendMode.color is used.
+
+## 0.19.0
+
+- Avoid unnecessary cache invalidation of SVGs drawn with color changes by:
+  - Deprecate color filter related options on PictureProvider classes.
+  - Make ColorFilter a property on SvgPicture
+  - Use the ColorFiltered widget for filtered SVGs.
+- Fix RTL rendering bug
+
+## 0.18.1
+
+- Bump the path_drawing dependency to 0.4.1+1
+- Expose clipBehavior from FittedBox
+- Expose SVG ids in `Drawable*` classes.
+- Change type of `alignment` to `AlignmentGeometry` on `SvgPicture`.
+- Fixed bug in transform parsing
+
+## 0.18.0
+
+- Drop DiagnosticbleMixin usage.
+- Bump XML dependency to ^4.1.0 and resolve deprecated API usages.
+- Await futures in tests.
+
+## 0.17.4
+
+- Allow `precachePicture` to take `null` for a `BuildContext`.
+- Provide a clearer error message when nested `<svg>` elements are used.
+
+## 0.17.3+1
+
+- Fixed regression in v0.17.3 for shape elements with no explicit fill but
+  explicit opacity.
+
+## 0.17.3
+
+- Be more permissive about whitespace in transform attributes.
+- Stop defaulting color to black when not present, fixing issue with colors
+  carried over from `use` elements.
+
+## 0.17.2
+
+- Bumped minimum Flutter version to 1.6.7 to pick up DiagnosticableMixin.
+- Allow more variations of whitespace in base64 encoded image data.
+
+## 0.17.1
+
+- Fix for issue with `use` elements refering to groups or other `use` elements
+  not correctly applying styles.
+
+## 0.17.0
+
+- Make ColorFiltering apply to whole layer instead of per paint operation.
+- **BREAKING** Remove `colorFilter` parameter from `VectorDrawable.draw`.
+- Fix color filtering for text.
+
+## 0.16.1
+
+- Support `image` tags in `defs`.
+- Make `DrawableRasterImage` implement `DrawableStyleable`.
+
+## 0.16.0
+
+- Move `transform` out of `DrawableStyle` and onto `DrawableStyleable`. Shapes
+  already worked this way, and the transform logic was handled in a confusingly
+  different way than all the other style attributes.
+- Support `<use/>` elements having `id`s.
+- Properly apply transforms to referenced use eleemnts.
+
+## 0.15.0
+
+- Respect transformations on `<image/>` tags.
+- Be more tolerant of malformed base64 data, similar to browsers (specifically,
+  having spaces present in the data). ## 0.14.4
+- Apply masks in the correct order when blend modes are involved in shapes.
+
+## 0.14.4
+
+- Support for masks on groups.
+- Update example project to Android X.
+
+## 0.14.3
+
+- Support for the `mix-blend-mode` attribute.
+
+## 0.14.2
+
+- Format, open up obtainKey for testing.
+
+## 0.14.1
+
+- Support for HSL colors (thanks to [@christianalfoni](https://github.com/christianalfoni))
+
+## 0.14.0
+
+- Added support for masks (thanks to [@krispypen](https://github.com/krispypen))
+- Allow for clearing of the picture cache
+
+## 0.13.1
+
+- Fix case where color filters were incorrectly getting created.
+
+## 0.13.0+2
+
+- Same fix for group opacity/saveLayer as in 0.12.4+2
+
 ## 0.13.0+1
 
 - Bump path_drawing dependency, which includes bug fixes in parsing.

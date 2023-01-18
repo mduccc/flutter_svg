@@ -1,9 +1,11 @@
 import 'picture_stream.dart';
+import 'svg/theme.dart';
 
 const int _kDefaultSize = 1000;
 
-/// A cache for [Picture] objects.
-// TODO(dnfield): Implement memory based limiting, once `approximateByteCount` is exposed in engine
+/// A cache for [PictureLayer] objects.
+///
+/// By default, this caches up to 1000 objects.
 class PictureCache {
   final Map<Object, PictureStreamCompleter> _cache =
       <Object, PictureStreamCompleter>{};
@@ -22,17 +24,17 @@ class PictureCache {
   /// returning it to its original value will therefore immediately clear the
   /// cache.
   set maximumSize(int value) {
-    assert(value != null);
+    assert(value != null); // ignore: unnecessary_null_comparison
     assert(value >= 0);
     if (value == maximumSize) {
       return;
     }
     _maximumSize = value;
     if (maximumSize == 0) {
-      _cache.clear();
+      clear();
     } else {
       while (_cache.length > maximumSize) {
-        _cache.remove(_cache.keys.first);
+        _cache.remove(_cache.keys.first)!.cached = false;
       }
     }
   }
@@ -41,10 +43,29 @@ class PictureCache {
   ///
   /// This is useful if, for instance, the root asset bundle has been updated
   /// and therefore new images must be obtained.
-  // TODO(ianh): Provide a way to target individual images. This is currently non-trivial
-  // because by the time we get to the imageCache, the keys we're using are opaque.
   void clear() {
+    for (final PictureStreamCompleter completer in _cache.values) {
+      assert(completer.cached);
+      completer.cached = false;
+    }
     _cache.clear();
+  }
+
+  /// Evicts a single entry from the cache, returning true if successful.
+  bool evict(Object key) {
+    return _cache.remove(key) != null;
+  }
+
+  /// Evicts a single entry from the cache if the `oldData` and `newData` are
+  /// incompatible.
+  ///
+  /// For example, if the theme has changed the current color and the picture
+  /// uses current color, [evict] will be called.
+  bool maybeEvict(Object key, SvgTheme oldData, SvgTheme newData) {
+    if (_cache[key]?.isCompatible(oldData, newData) ?? true) {
+      return false;
+    }
+    return evict(key);
   }
 
   /// Returns the previously cached [PictureStream] for the given key, if available;
@@ -53,22 +74,26 @@ class PictureCache {
   ///
   /// The arguments must not be null. The `loader` cannot return null.
   PictureStreamCompleter putIfAbsent(
-      Object key, PictureStreamCompleter loader()) {
-    assert(key != null);
-    assert(loader != null);
-    PictureStreamCompleter result = _cache[key];
+    Object key,
+    PictureStreamCompleter loader(),
+  ) {
+    assert(key != null); // ignore: unnecessary_null_comparison
+    assert(loader != null); // ignore: unnecessary_null_comparison
+    PictureStreamCompleter? result = _cache[key];
     if (result != null) {
       // Remove the provider from the list so that we can put it back in below
       // and thus move it to the end of the list.
       _cache.remove(key);
     } else {
-      if (_cache.length == maximumSize && maximumSize > 0)
-        _cache.remove(_cache.keys.first);
+      if (_cache.length == maximumSize && maximumSize > 0) {
+        _cache.remove(_cache.keys.first)!.cached = false;
+      }
       result = loader();
     }
     if (maximumSize > 0) {
       assert(_cache.length < maximumSize);
       _cache[key] = result;
+      result.cached = true;
     }
     assert(_cache.length <= maximumSize);
     return result;
