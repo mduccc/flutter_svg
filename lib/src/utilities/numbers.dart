@@ -1,16 +1,26 @@
-/// Parses a `String` to a `double`.
+/// Parses a [rawDouble] `String` to a `double`.
+///
+/// The [rawDouble] might include a unit (`px`, `em` or `ex`)
+/// which is stripped off when parsed to a `double`.
 ///
 /// Passing `null` will return `null`.
-///
-/// Will strip off a `px` prefix.
-double parseDouble(String maybeDouble, {bool tryParse = false}) {
-  assert(tryParse != null);
-  if (maybeDouble == null) {
+double? parseDouble(String? rawDouble, {bool tryParse = false}) {
+  assert(tryParse != null); // ignore: unnecessary_null_comparison
+  if (rawDouble == null) {
     return null;
   }
-  maybeDouble = maybeDouble.trim().replaceFirst('px', '').trim();
+
+  rawDouble = rawDouble
+      .replaceFirst('rem', '')
+      .replaceFirst('em', '')
+      .replaceFirst('ex', '')
+      .replaceFirst('px', '')
+      .replaceFirst('pt', '')
+      .replaceFirst('%', '')
+      .trim();
+
   if (tryParse) {
-    return double.tryParse(maybeDouble);
+    return double.tryParse(rawDouble);
   }
-  return double.parse(maybeDouble);
+  return double.parse(rawDouble);
 }
